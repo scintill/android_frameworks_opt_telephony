@@ -21,6 +21,7 @@ import static com.android.internal.telephony.TelephonyProperties.PROPERTY_DEFAUL
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.LocalServerSocket;
 import android.os.SystemProperties;
 import android.os.UserHandle;
@@ -143,7 +144,7 @@ public class PhoneFactory {
                 int numPhones = TelephonyManager.getDefault().getPhoneCount();
                 int[] networkModes = new int[numPhones];
                 sProxyPhones = new PhoneProxy[numPhones];
-                sCommandsInterfaces = new RIL[numPhones];
+                sCommandsInterfaces = new CommandsInterface[numPhones];
                 String sRILClassname = SystemProperties.get("ro.telephony.ril_class", "RIL").trim();
                 Rlog.i(LOG_TAG, "RILClassname is " + sRILClassname);
 
@@ -265,9 +266,29 @@ public class PhoneFactory {
     private static <T> T instantiateCustomRIL(
                       String sRILClassname, Context context, int networkMode, int cdmaSubscription, Integer instanceId)
                       throws Exception {
-        Class<?> clazz = Class.forName("com.android.internal.telephony." + sRILClassname);
+        Class<?> clazz = loadCustomRILClass(sRILClassname);
         Constructor<?> constructor = clazz.getConstructor(Context.class, int.class, int.class, Integer.class);
         return (T) clazz.cast(constructor.newInstance(context, networkMode, cdmaSubscription, instanceId));
+    }
+
+    private static Class loadCustomRILClass(String sRILClassName)
+                    throws ClassNotFoundException, PackageManager.NameNotFoundException {
+
+        if (!sRILClassName.contains(".")) {
+            return Class.forName("com.android.internal.telephony." + sRILClassName);
+        } else {
+            ComponentName cmp = ComponentName.unflattenFromString(sRILClassName);
+            if (cmp == null) {
+                throw new IllegalArgumentException("unknown component name: "+sRILClassName);
+            }
+
+            String pkg = cmp.getPackageName();
+            String className = cmp.getClassName();
+            return sContext
+                    .createPackageContext(pkg, Context.CONTEXT_INCLUDE_CODE)
+                    .getClassLoader()
+                    .loadClass(className);
+        }
     }
 
     public static Phone getDefaultPhone() {
